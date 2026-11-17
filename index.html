@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>ระบบจัดเก็บพัสดุและ ครุภัณฑ์ (Assets Manager)</title>
+  <title>ระบบจัดเก็บและสแกน QR อุปกรณ์ (Assets Manager)</title>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Noto+Sans+Thai:wght@400;500;600;700&display=swap" rel="stylesheet" />
@@ -260,6 +260,7 @@
                 <input id="gas-url-input" type="url" placeholder="https://script.google.com/macros/s/.../exec" class="w-full px-3.5 py-2.5 text-sm bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500" />
                 <div class="flex flex-wrap gap-2 pt-1">
                   <button id="save-gas-btn" class="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold rounded-xl">บันทึกและซิงค์ข้อมูล</button>
+                  <button id="copy-share-link-btn" class="px-4 py-2 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 text-xs font-semibold rounded-xl">คัดลอกลิงก์เปิดบนเครื่องอื่น</button>
                   <button id="fetch-public-btn" class="px-4 py-2 bg-white hover:bg-slate-50 text-slate-700 border border-slate-200 text-xs font-semibold rounded-xl">ดึงข้อมูลแบบอ่านอย่างเดียว (Public Sheet)</button>
                 </div>
               </div>
@@ -509,6 +510,7 @@ function doPost(e) {
 
   <script>
     const SHEET_ID = '1JC953zLg8L6QsducTZOx82CowXh516U2hkogGRQbCG8';
+    const DEFAULT_GAS_URL = ''; // วาง Google Apps Script Web App URL ที่นี่ เพื่อให้ทุกเครื่องเชื่อมอัตโนมัติ
     const STORAGE_KEY = 'assets_manager_data_v1';
     const GAS_URL_KEY = 'assets_manager_gas_url_v1';
 
@@ -581,13 +583,18 @@ function doPost(e) {
 
     // Storage helpers
     function loadState() {
+      let urlApi = '';
+      try {
+        urlApi = new URLSearchParams(window.location.search).get('api') || '';
+      } catch (e) {}
       try {
         const saved = localStorage.getItem(STORAGE_KEY);
         assets = saved ? JSON.parse(saved) : JSON.parse(JSON.stringify(DEFAULT_ASSETS));
-        gasUrl = localStorage.getItem(GAS_URL_KEY) || '';
+        gasUrl = urlApi || localStorage.getItem(GAS_URL_KEY) || DEFAULT_GAS_URL || '';
+        if (urlApi) localStorage.setItem(GAS_URL_KEY, urlApi);
       } catch (e) {
         assets = JSON.parse(JSON.stringify(DEFAULT_ASSETS));
-        gasUrl = '';
+        gasUrl = urlApi || DEFAULT_GAS_URL || '';
       }
       document.getElementById('gas-url-input').value = gasUrl;
       updateSyncStatusUI();
@@ -987,6 +994,9 @@ function doPost(e) {
     document.addEventListener('DOMContentLoaded', () => {
       loadState();
       renderAll();
+      if (gasUrl) {
+        fetchFromGAS();
+      }
 
       // Nav buttons
       document.querySelectorAll('.nav-btn, .nav-btn-mobile').forEach(btn => {
@@ -1141,6 +1151,19 @@ function doPost(e) {
         updateSyncStatusUI();
         if (gasUrl) fetchFromGAS();
         else showToast('ยกเลิกการเชื่อมต่อแล้ว (กลับสู่โหมด Local)');
+      });
+      document.getElementById('copy-share-link-btn').addEventListener('click', () => {
+        const urlVal = document.getElementById('gas-url-input').value.trim() || gasUrl;
+        if (!urlVal) {
+          showToast('กรุณากรอก Google Apps Script Web App URL ก่อน');
+          return;
+        }
+        const shareUrl = `${window.location.origin}${window.location.pathname}?api=${encodeURIComponent(urlVal)}`;
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+          navigator.clipboard.writeText(shareUrl).then(() => showToast('คัดลอกลิงก์สำหรับเปิดบนเครื่องอื่นแล้ว')).catch(() => fallbackCopy(shareUrl));
+        } else {
+          fallbackCopy(shareUrl);
+        }
       });
       document.getElementById('fetch-public-btn').addEventListener('click', fetchFromPublicSheet);
       document.getElementById('export-csv-btn').addEventListener('click', exportCSV);
